@@ -2,8 +2,6 @@ import asyncio
 import logging
 import random
 import string
-import json
-import os
 from datetime import datetime, timedelta
 
 from aiogram import Bot, Dispatcher, F
@@ -41,7 +39,6 @@ user_language = {}
 
 # Русский язык
 RU = {
-    # Стартовое описание
     'start_description': '🔐 *Анонимный файлообменник*\n\n'
                          '• Полностью анонимный обмен файлами и сообщениями\n'
                          '• Переписки не хранятся и автоматически удаляются\n'
@@ -49,13 +46,11 @@ RU = {
                          '• Подключайся через VPN для обхода блокировок в России\n\n'
                          '_Ваша приватность — наш главный приоритет_',
     
-    # Кнопки главного меню
     'btn_msg': '📨 Сообщение админу',
     'btn_crypto': '💰 Крипто',
     'btn_link': '🔗 ПОЛУЧИТЬ ССЫЛКУ 🔗',
     'btn_vpn': '🔒 VPN',
     
-    # Другие тексты
     'write_msg': '✍️ Напишите сообщение, и я передам его создателю',
     'crypto_text': 'TRC20\nTPnv8C9UfimDRNC6sAyYMGCwFonV9uZHcn\n\nTON\nUQBgSeJbR6BwIhvghAlC4KWw60n-tOm8_x73J0pcF0HNh9hp',
     'vpn_text': '🔒 *VPN*\n\n• Обход блокировок в России\n• Скрытие реального IP\n• Маскировка трафика под белые списки',
@@ -72,13 +67,13 @@ RU = {
     'banned': '🚫 Вы забанены',
     'link_expired': '❌ Ссылка истекла',
     'chat_occupied': '❌ Чат уже занят',
+    'waiting_for_partner': '⏳ Ожидание подключения второго участника...',
     'reply': '📝 Ответить',
     'ban': '🚫 Забанить',
     'reply_prompt': '✍️ Напишите ответ (будет отправлен пользователю):',
     'reply_sent': '✅ Ответ отправлен!',
     'user_banned': '✅ Пользователь забанен',
     
-    # Админ-команды
     'broadcast_prompt': '📢 Отправьте сообщение для рассылки:',
     'cancelled': '❌ Отменено',
     'no_users': '📭 Нет пользователей',
@@ -89,13 +84,8 @@ RU = {
     'user_unbanned': '✅ @{username} разбанен',
     'user_not_found': '❌ @{username} не найден',
     
-    # Команда infousers
     'users_list': '📊 Пользователи:\n\n',
     'no_users_yet': '📭 Пока нет пользователей',
-    
-    # Кнопки выбора языка
-    'ru_flag': '🇷🇺 RU',
-    'en_flag': '🇺🇸 EN',
 }
 
 # Английский язык
@@ -128,6 +118,7 @@ EN = {
     'banned': '🚫 You are banned',
     'link_expired': '❌ Link expired',
     'chat_occupied': '❌ Chat occupied',
+    'waiting_for_partner': '⏳ Waiting for second participant to join...',
     'reply': '📝 Reply',
     'ban': '🚫 Ban',
     'reply_prompt': '✍️ Write your reply (will be sent to the user):',
@@ -146,14 +137,11 @@ EN = {
     
     'users_list': '📊 Users:\n\n',
     'no_users_yet': '📭 No users yet',
-    
-    'ru_flag': '🇷🇺 RU',
-    'en_flag': '🇺🇸 EN',
 }
 
 def get_text(user_id, key):
     """Получить текст на языке пользователя"""
-    lang = user_language.get(user_id, 'ru')  # По умолчанию русский
+    lang = user_language.get(user_id, 'ru')
     return RU[key] if lang == 'ru' else EN[key]
 
 
@@ -180,7 +168,6 @@ class BroadcastState(StatesGroup):
 # ==================== КЛАВИАТУРЫ ====================
 
 def language_keyboard():
-    """Клавиатура выбора языка"""
     return InlineKeyboardMarkup(
         inline_keyboard=[
             [InlineKeyboardButton(text="🇷🇺 Русский", callback_data="lang_ru"),
@@ -189,7 +176,6 @@ def language_keyboard():
     )
 
 def main_keyboard(user_id):
-    """Основная клавиатура"""
     return InlineKeyboardMarkup(
         inline_keyboard=[
             [InlineKeyboardButton(text=get_text(user_id, 'btn_msg'), callback_data="btn_1"),
@@ -287,24 +273,20 @@ async def start_handler(message: Message):
         await message.answer(get_text(user_id, 'banned'))
         return
     
-    # Сохраняем username
     if message.from_user.username:
         user_usernames[user_id] = f"@{message.from_user.username}"
     else:
         user_usernames[user_id] = message.from_user.full_name or "No username"
     
-    # Записываем дату первого запуска
     if user_id not in user_first_start:
         user_first_start[user_id] = datetime.now()
         logger.info(f"Новый пользователь {user_usernames[user_id]} запустил бота")
     
-    # Проверка перехода по ссылке
     args = message.text.split()
     if len(args) > 1:
         await handle_link_click(message, args[1])
         return
     
-    # Если язык еще не выбран, показываем выбор языка
     if user_id not in user_language:
         await message.answer_photo(
             photo=MAIN_PHOTO_ID,
@@ -314,7 +296,6 @@ async def start_handler(message: Message):
         )
         return
     
-    # Если язык выбран, показываем главное меню
     user_last_message[user_id] = datetime.now()
     
     await message.answer_photo(
@@ -327,16 +308,13 @@ async def start_handler(message: Message):
 
 @dp.callback_query(F.data.startswith("lang_"))
 async def language_callback(callback: CallbackQuery):
-    """Обработчик выбора языка"""
     user_id = callback.from_user.id
-    lang = callback.data.split("_")[1]  # 'ru' или 'en'
+    lang = callback.data.split("_")[1]
     
-    # Сохраняем язык
     user_language[user_id] = lang
     
     await callback.message.delete()
     
-    # Показываем главное меню с выбранным языком
     await callback.message.answer_photo(
         photo=MAIN_PHOTO_ID,
         caption=get_text(user_id, 'start_description'),
@@ -438,6 +416,34 @@ async def handle_link_click(message: Message, token: str):
         parse_mode="Markdown",
         reply_markup=chat_keyboard(user_id)
     )
+
+
+# ==================== ФУНКЦИЯ ДЛЯ ОТПРАВКИ МЕДИА ====================
+
+async def send_media_by_type(message: Message, chat_id: int, caption: str = None):
+    """Отправляет медиа в зависимости от типа (полностью анонимно)"""
+    try:
+        if message.text:
+            return await bot.send_message(chat_id, message.text)
+        elif message.photo:
+            return await bot.send_photo(chat_id, message.photo[-1].file_id, caption=caption)
+        elif message.document:
+            return await bot.send_document(chat_id, message.document.file_id, caption=caption)
+        elif message.video:
+            return await bot.send_video(chat_id, message.video.file_id, caption=caption)
+        elif message.audio:
+            return await bot.send_audio(chat_id, message.audio.file_id, caption=caption)
+        elif message.voice:
+            return await bot.send_voice(chat_id, message.voice.file_id, caption=caption)
+        elif message.sticker:
+            return await bot.send_sticker(chat_id, message.sticker.file_id)
+        elif message.animation:
+            return await bot.send_animation(chat_id, message.animation.file_id, caption=caption)
+        else:
+            return await message.copy_to(chat_id)
+    except Exception as e:
+        logger.error(f"Error in send_media_by_type: {e}")
+        return None
 
 
 # ==================== ОБРАБОТЧИКИ КНОПОК ====================
@@ -574,7 +580,6 @@ async def exit_chat(callback: CallbackQuery):
                     parse_mode="Markdown",
                     reply_markup=main_keyboard(other_user)
                 )
-                await bot.delete_message(other_user, callback.message.message_id)
             except:
                 pass
         
@@ -629,27 +634,6 @@ async def back_button(callback: CallbackQuery):
         parse_mode="Markdown",
         reply_markup=main_keyboard(user_id)
     )
-
-
-# ==================== ФУНКЦИИ ДЛЯ ОТПРАВКИ СООБЩЕНИЙ ====================
-
-async def send_media_by_type(message: Message, chat_id: int, caption: str = None):
-    if message.photo:
-        return await bot.send_photo(chat_id, message.photo[-1].file_id, caption=caption)
-    elif message.document:
-        return await bot.send_document(chat_id, message.document.file_id, caption=caption)
-    elif message.video:
-        return await bot.send_video(chat_id, message.video.file_id, caption=caption)
-    elif message.audio:
-        return await bot.send_audio(chat_id, message.audio.file_id, caption=caption)
-    elif message.voice:
-        return await bot.send_voice(chat_id, message.voice.file_id, caption=caption)
-    elif message.sticker:
-        return await bot.send_sticker(chat_id, message.sticker.file_id)
-    elif message.animation:
-        return await bot.send_animation(chat_id, message.animation.file_id, caption=caption)
-    else:
-        return await message.forward(chat_id)
 
 
 # ==================== ОБРАБОТЧИКИ КНОПОК АДМИНА ====================
@@ -724,7 +708,37 @@ async def message_handler(message: Message, state: FSMContext):
         )
         return
     
-    # Админ
+    # === АНОНИМНЫЙ ЧАТ (ИСПРАВЛЕННАЯ ВЕРСИЯ) ===
+    if user_id in user_chat_token:
+        token = user_chat_token[user_id]
+        if token in anonymous_chats:
+            creator_id, participant_id = anonymous_chats[token]
+
+            # Определяем получателя
+            if user_id == creator_id:
+                receiver = participant_id
+            elif user_id == participant_id:
+                receiver = creator_id
+            else:
+                receiver = None
+
+            # Если оба участника в чате
+            if receiver and participant_id is not None and creator_id is not None:
+                # Просто пересылаем сообщение получателю (полная анонимность)
+                sent = await send_media_by_type(message, receiver)
+
+                # Сохраняем ID сообщения для авто-удаления
+                if sent and token in chat_messages:
+                    chat_messages[token].append((receiver, sent.message_id))
+
+                # Не отправляем подтверждение отправителю
+                return
+            else:
+                # Если второй участник ещё не подключился
+                await message.answer(get_text(user_id, 'waiting_for_partner'))
+                return
+    
+    # === АДМИН ===
     if user_id == ADMIN_ID:
         current_state = await state.get_state()
         
@@ -757,22 +771,6 @@ async def message_handler(message: Message, state: FSMContext):
                         )
                         await message.answer(get_text(ADMIN_ID, 'reply_sent'))
                         
-                    elif message.video:
-                        await bot.send_video(
-                            target_user,
-                            message.video.file_id,
-                            caption="👤 Creator"
-                        )
-                        await message.answer(get_text(ADMIN_ID, 'reply_sent'))
-                        
-                    elif message.sticker:
-                        await bot.send_sticker(target_user, message.sticker.file_id)
-                        await message.answer(get_text(ADMIN_ID, 'reply_sent'))
-                        
-                    elif message.voice:
-                        await bot.send_voice(target_user, message.voice.file_id, caption="👤 Creator")
-                        await message.answer(get_text(ADMIN_ID, 'reply_sent'))
-                        
                     else:
                         await message.forward(target_user)
                         await message.answer(get_text(ADMIN_ID, 'reply_sent'))
@@ -790,20 +788,7 @@ async def message_handler(message: Message, state: FSMContext):
         
         return
     
-    # Анонимный чат
-    if user_id in user_chat_token:
-        token = user_chat_token[user_id]
-        if token in anonymous_chats:
-            creator_id, participant_id = anonymous_chats[token]
-            receiver = participant_id if user_id == creator_id else creator_id
-            
-            if receiver:
-                sent = await send_media_by_type(message, receiver)
-                if sent and token in chat_messages:
-                    chat_messages[token].append((receiver, sent.message_id))
-                return
-    
-    # Обычное сообщение админу
+    # === ОБЫЧНОЕ СООБЩЕНИЕ АДМИНУ ===
     if message.from_user.username:
         user_display = f"@{message.from_user.username}"
     else:
